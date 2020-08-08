@@ -7,46 +7,98 @@
 package it
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"io"
+	"strings"
+	"sync"
 	"time"
 )
 
 // Tracker is the minimal issue tracker interface
 type Tracker interface {
+	// ID returns the ID of this Tracker.
+	ID() TrackerID
 	// GetIssue returns the data for the issueID
-	GetIssue(IssueID) (Issue, error)
+	GetIssue(context.Context, IssueID) (Issue, error)
 	// ListIssues lists all the issues created/changed since "since".
-	ListIssues(since time.Time) ([]Issue, error)
+	ListIssues(ctx context.Context, since time.Time) ([]Issue, error)
 	// CreateIssue creates the issue, returning the ID.
 	// May return ErrNotImplemented.
-	CreateIssue(Issue) (IssueID, error)
+	CreateIssue(context.Context, Issue) (IssueID, error)
 	// UpdateIssue updates the issue's state.
-	UpdateIssue(Issue) error
+	UpdateIssueState(context.Context, IssueID, State) error
+	// SetSecondaryID updates the secondary ID to the issue.
+	SetSecondaryID(ctx context.Context, primary, secondary IssueID) error
 
 	// AddComment adds a comment to the issue.
-	AddComment(IssueID, Comment) error
+	AddComment(context.Context, IssueID, Comment) (CommentID, error)
 	// ListComments list the comments of the issue.
-	ListComments(IssueID) ([]Comment, error)
+	ListComments(context.Context, IssueID) ([]Comment, error)
 
 	// AddAttachment adds the attachment to the issue.
-	AddAttachment(IssueID, Attachment) error
+	AddAttachment(context.Context, IssueID, Attachment) (AttachmentID, error)
 	// ListAttachments lists the attachments of the issue.
-	ListAttachments(IssueID) ([]Attachment, error)
+	ListAttachments(context.Context, IssueID) ([]Attachment, error)
 }
+
+var (
+	ErrNotImplemented = errors.New("not implemented")
+
+	registryMu sync.RWMutex
+	registry   map[string]func(string) (Tracker, error)
+)
+
+func Register(name string, factory func(baseURL string) (Tracker, error)) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	_, ok := registry[name]
+	if ok {
+		panic(fmt.Errorf("%q: %w", name, ErrAlreadyRegistered))
+	}
+	registry[name] = factory
+}
+
+func New(baseURL string) (Tracker, error) {
+	i := strings.IndexByte(baseURL, ':')
+	if i < 0 {
+		return nil, fmt.Errorf("%q: no name: found", baseURL)
+	}
+	name, baseURL := baseURL[:i], baseURL[i+1:]
+	registryMu.RLock()
+	f := registry[name]
+	registryMu.RUnlock()
+	if f == nil {
+		return nil, fmt.Errorf("%q is not found", name)
+	}
+	return f(baseURL)
+}
+
+var ErrAlreadyRegistered = errors.New("already registered")
 
 // Issue holds the data of the issue.
 type Issue struct {
-	ID string
+	ID, SecondaryID IssueID
+	State           State
 }
 
 // IssueID is the ID of the issue.
-type IssueID string
+type (
+	TrackerID    string
+	IssueID      string
+	CommentID    string
+	AttachmentID string
+
+	State string
+)
 
 // Comment is a comment.
 type Comment struct {
+	ID        CommentID
 	Author    Author
 	CreatedAt time.Time
-	Text      string
+	Body      string
 }
 
 type Author struct {
@@ -55,6 +107,7 @@ type Author struct {
 
 // Attachment is an attachment (file).
 type Attachment struct {
+	ID        AttachmentID
 	Name      string
 	CreatedAt time.Time
 	// GetBody returns the data.
