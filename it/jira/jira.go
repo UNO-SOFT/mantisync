@@ -42,7 +42,9 @@ func (c Client) GetIssue(ctx context.Context, ID it.IssueID) (it.Issue, error) {
 	ji, _, err := c.Client.Issue.Get(string(ID), nil)
 	return it.Issue{
 		ID: it.IssueID(ji.ID), Summary: ji.Fields.Summary,
-		State: it.State(ji.Fields.Status.Name),
+		Author:    readJU(ji.Fields.Reporter, ji.Fields.Creator),
+		CreatedAt: time.Time(ji.Fields.Created),
+		State:     it.State(ji.Fields.Status.Name),
 	}, err
 }
 
@@ -89,7 +91,22 @@ func (c Client) AddComment(ctx context.Context, ID it.IssueID, comment it.Commen
 
 // ListComments list the comments of the issue.
 func (c Client) ListComments(ctx context.Context, ID it.IssueID) ([]it.Comment, error) {
-	return nil, it.ErrNotImplemented
+	jc, _, err := c.Client.Issue.Get(string(ID), &jira.GetQueryOptions{
+		Fields: "comments",
+	})
+	if err != nil {
+		return nil, err
+	}
+	comments := make([]it.Comment, len(jc.Fields.Comments.Comments))
+	for i, c := range jc.Fields.Comments.Comments {
+		comments[i] = it.Comment{
+			ID:        it.CommentID(c.ID),
+			Body:      c.Body,
+			CreatedAt: s2t(c.Created),
+			Author:    readJU(&c.UpdateAuthor, &c.Author),
+		}
+	}
+	return comments, nil
 }
 
 // AddAttachment adds the attachment to the issue.
@@ -114,7 +131,8 @@ func (c Client) ListAttachments(ctx context.Context, ID it.IssueID) ([]it.Attach
 	as := make([]it.Attachment, len(jc.Fields.Attachments))
 	for i, ja := range jc.Fields.Attachments {
 		as[i] = it.Attachment{
-			ID: it.AttachmentID(ja.ID), Name: ja.Filename, MIMEType: ja.MimeType, //CreatedAt:ja.Created,
+			ID: it.AttachmentID(ja.ID), Name: ja.Filename, MIMEType: ja.MimeType,
+			CreatedAt: s2t(ja.Created),
 		}
 		if ja.Content != "" {
 			as[i].GetBody = func() (io.ReadCloser, error) {
@@ -134,5 +152,22 @@ func (c Client) ListAttachments(ctx context.Context, ID it.IssueID) ([]it.Attach
 			}
 		}
 	}
-	return nil, it.ErrNotImplemented
+	return as, nil
+}
+
+func s2t(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
+}
+
+func readJU(jus ...*jira.User) it.User {
+	for _, ju := range jus {
+		if ju == nil || ju.AccountID == "" || ju.EmailAddress == "" {
+			continue
+		}
+		return it.User{ID: it.UserID(ju.AccountID),
+			Email:    ju.EmailAddress,
+			RealName: ju.DisplayName}
+	}
+	return it.User{}
 }

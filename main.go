@@ -17,6 +17,7 @@ import (
 
 	"github.com/UNO-SOFT/mantisync/it"
 	_ "github.com/UNO-SOFT/mantisync/it/jira"
+	_ "github.com/UNO-SOFT/mantisync/it/mantisbt"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/tgulacsi/go/globalctx"

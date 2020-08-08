@@ -81,6 +81,8 @@ var ErrAlreadyRegistered = errors.New("already registered")
 type Issue struct {
 	ID, SecondaryID IssueID
 	Summary         string
+	Author          User
+	CreatedAt       time.Time
 	State           State
 }
 
@@ -90,6 +92,7 @@ type (
 	IssueID      string
 	CommentID    string
 	AttachmentID string
+	UserID       string
 
 	State string
 )
@@ -97,19 +100,21 @@ type (
 // Comment is a comment.
 type Comment struct {
 	ID        CommentID
-	Author    Author
+	Author    User
 	CreatedAt time.Time
 	Body      string
 }
 
-type Author struct {
-	ShortName, RealName, Email string
+type User struct {
+	ID              UserID
+	RealName, Email string
 }
 
 // Attachment is an attachment (file).
 type Attachment struct {
 	ID             AttachmentID
 	Name, MIMEType string
+	Author         User
 	CreatedAt      time.Time
 	// GetBody returns the data.
 	GetBody func() (io.ReadCloser, error)
