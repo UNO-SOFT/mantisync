@@ -1,4 +1,9 @@
-package mantisbt
+// Copyright 2020 Tamás Gulácsi. All rights reserved.
+//
+//
+// SPDX-License-Identifier: Apache-2.0
+
+package skeleton
 
 import (
 	"context"

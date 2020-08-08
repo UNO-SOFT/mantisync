@@ -23,6 +23,7 @@ type Tracker interface {
 	// GetIssue returns the data for the issueID
 	GetIssue(context.Context, IssueID) (Issue, error)
 	// ListIssues lists all the issues created/changed since "since".
+	// Only ID and SecondaryID is required to be filled.
 	ListIssues(ctx context.Context, since time.Time) ([]Issue, error)
 	// CreateIssue creates the issue, returning the ID.
 	// May return ErrNotImplemented.

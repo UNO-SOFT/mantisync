@@ -52,7 +52,8 @@ func (c Client) GetIssue(ctx context.Context, ID it.IssueID) (it.Issue, error) {
 func (c Client) ListIssues(ctx context.Context, since time.Time) ([]it.Issue, error) {
 	// https://developer.atlassian.com/server/jira/platform/jira-rest-api-examples/#searching-for-issues-examples
 	issues := make([]it.Issue, 0, 1024)
-	err := c.Client.Issue.SearchPages("",
+	sinceS := since.Format("2006-01-02")
+	err := c.Client.Issue.SearchPages("updated >= "+sinceS+" OR created >= "+sinceS,
 		&jira.SearchOptions{
 			StartAt: 0, MaxResults: 1000, Fields: []string{"id", "key"},
 		},
