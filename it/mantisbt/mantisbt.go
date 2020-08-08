@@ -111,7 +111,7 @@ func (c Client) AddComment(ctx context.Context, ID it.IssueID, comment it.Commen
 		DateSubmitted: mantis.Time(comment.CreatedAt),
 		Text:          comment.Body,
 	})
-	return it.CommentID(strconv.Itoa(id)), nil
+	return it.CommentID(strconv.Itoa(id)), err
 }
 
 // ListComments list the comments of the issue.
