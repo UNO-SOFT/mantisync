@@ -16,7 +16,11 @@ import (
 type DB interface {
 	Get(bucket, key string) (string, error)
 	Put(bucket, key, value string) error
+	PutN(...DBItem) error
 	Close() error
+}
+type DBItem struct {
+	Bucket, Key, Value string
 }
 
 func NewFileDB(fn string) (*FileDB, error) {
@@ -44,6 +48,22 @@ func (fdb *FileDB) Get(bucket, key string) (string, error) {
 func (fdb *FileDB) Put(bucket, key, value string) error {
 	fdb.mu.Lock()
 	defer fdb.mu.Unlock()
+	if err := fdb.put(bucket, key, value); err != nil {
+		return err
+	}
+	return fdb.sync()
+}
+func (fdb *FileDB) PutN(items ...DBItem) error {
+	fdb.mu.Lock()
+	defer fdb.mu.Unlock()
+	for _, x := range items {
+		if err := fdb.put(x.Bucket, x.Key, x.Value); err != nil {
+			return err
+		}
+	}
+	return fdb.sync()
+}
+func (fdb *FileDB) put(bucket, key, value string) error {
 	if fdb.buckets == nil {
 		fdb.buckets = map[string]map[string]string{bucket: map[string]string{key: value}}
 		return nil
@@ -54,7 +74,7 @@ func (fdb *FileDB) Put(bucket, key, value string) error {
 		return nil
 	}
 	fdb.buckets[bucket][key] = value
-	return fdb.sync()
+	return nil
 }
 
 func (fdb *FileDB) sync() error {

@@ -71,10 +71,11 @@ func Sync(ctx context.Context, db it.DB, primary, secondary it.Tracker) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		issueBucket := string(primary.ID() + "|" + secondary.ID() + "|issue")
+		bucket := string(primary.ID() + "\t" + secondary.ID() + "\tI")
+		bucketR := string(secondary.ID() + "\t" + primary.ID() + "\tI")
 		secIDOk := issue.SecondaryID != ""
 		if !secIDOk {
-			if secondaryID, err := db.Get(issueBucket, string(issue.ID)); err != nil && !errors.Is(err, it.ErrNotImplemented) {
+			if secondaryID, err := db.Get(bucket, string(issue.ID)); err != nil && !errors.Is(err, it.ErrNotImplemented) {
 				return err
 			} else {
 				issue.SecondaryID = it.IssueID(secondaryID)
@@ -90,7 +91,10 @@ func Sync(ctx context.Context, db it.DB, primary, secondary it.Tracker) error {
 			if err != nil {
 				return fmt.Errorf("create %q: %w", issue.ID, err)
 			}
-			if err = db.Put(issueBucket, string(issue.ID), string(issue.SecondaryID)); err != nil {
+			if err = db.PutN(
+				it.DBItem{bucket, string(issue.ID), string(issue.SecondaryID)},
+				it.DBItem{bucketR, string(issue.SecondaryID), string(issue.ID)},
+			); err != nil {
 				return err
 			}
 		}
@@ -112,6 +116,11 @@ func Sync(ctx context.Context, db it.DB, primary, secondary it.Tracker) error {
 }
 
 // Ahhoz, hogy a szinkronizáció működjön, el kell tárolni a primary-secondary azonosító párokat!
+//
+// (T,T')_I: I -> I'
+// (T',T)_I: I' -> I
+// (T,T')_C: C -> C'
+// (T',T)_C: C' -> C
 func syncComments(ctx context.Context, db it.DB, a it.Tracker, aID it.IssueID, b it.Tracker, bID it.IssueID) error {
 	aComments, err := a.ListComments(ctx, aID)
 	if err != nil {
@@ -131,26 +140,40 @@ func syncComments(ctx context.Context, db it.DB, a it.Tracker, aID it.IssueID, b
 		bMap[c.ID] = i
 	}
 
-	for _, c := range aComments {
-		bucket := string(b.ID() + "|" + a.ID() + "|comment")
-		if _, ok := bMap[c.ID]; !ok {
-			if aID, err := b.AddComment(ctx, bID, c); err != nil {
+	bucketAB := string(b.ID() + "\t" + a.ID() + "\tC")
+	bucketBA := string(a.ID() + "\t" + b.ID() + "\tC")
+	for _, x := range aComments {
+		if _, ok := bMap[x.ID]; !ok {
+			if yID, err := db.Get(bucketAB, string(x.ID)); err != nil {
 				return err
-			} else {
-				if err = db.Put(bucket, string(bID), string(aID)); err != nil {
+			} else if yID == "" {
+				if yID, err := b.AddComment(ctx, bID, x); err != nil {
 					return err
+				} else {
+					if err = db.PutN(
+						it.DBItem{bucketAB, string(x.ID), string(yID)},
+						it.DBItem{bucketBA, string(yID), string(x.ID)},
+					); err != nil {
+						return err
+					}
 				}
 			}
 		}
 	}
-	for _, c := range bComments {
-		bucket := string(a.ID() + "|" + b.ID() + "|comment")
-		if _, ok := aMap[c.ID]; !ok {
-			if bID, err := a.AddComment(ctx, aID, c); err != nil {
+	for _, x := range bComments {
+		if _, ok := aMap[x.ID]; !ok {
+			if yID, err := db.Get(bucketBA, string(x.ID)); err != nil {
 				return err
-			} else {
-				if err = db.Put(bucket, string(aID), string(bID)); err != nil {
+			} else if yID == "" {
+				if yID, err := a.AddComment(ctx, aID, x); err != nil {
 					return err
+				} else {
+					if err = db.PutN(
+						it.DBItem{bucketBA, string(x.ID), string(yID)},
+						it.DBItem{bucketAB, string(yID), string(x.ID)},
+					); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -177,26 +200,40 @@ func syncAttachments(ctx context.Context, db it.DB, a it.Tracker, aID it.IssueID
 		bMap[a.ID] = i
 	}
 
-	for _, c := range aAttachments {
-		bucket := string(a.ID() + "|" + b.ID() + "|attachment")
-		if _, ok := bMap[aID]; !ok {
-			if bID, err := b.AddAttachment(ctx, aID, c); err != nil {
+	bucketAB := string(b.ID() + "\t" + a.ID() + "\tC")
+	bucketBA := string(a.ID() + "\t" + b.ID() + "\tC")
+	for _, x := range aAttachments {
+		if _, ok := bMap[x.ID]; !ok {
+			if yID, err := db.Get(bucketAB, string(x.ID)); err != nil {
 				return err
-			} else {
-				if err = db.Put(bucket, string(aID), string(bID)); err != nil {
+			} else if yID == "" {
+				if yID, err := b.AddAttachment(ctx, aID, x); err != nil {
 					return err
+				} else {
+					if err = db.PutN(
+						it.DBItem{bucketAB, string(x.ID), string(yID)},
+						it.DBItem{bucketBA, string(yID), string(x.ID)},
+					); err != nil {
+						return err
+					}
 				}
 			}
 		}
 	}
-	for _, c := range bAttachments {
-		bucket := string(a.ID() + "|" + b.ID() + "|attachment")
-		if _, ok := aMap[c.ID]; !ok {
-			if aID, err := a.AddAttachment(ctx, bID, c); err != nil {
+	for _, x := range bAttachments {
+		if _, ok := aMap[x.ID]; !ok {
+			if yID, err := db.Get(bucketBA, string(x.ID)); err != nil {
 				return err
-			} else {
-				if err = db.Put(bucket, string(bID), string(aID)); err != nil {
+			} else if yID == "" {
+				if yID, err := a.AddAttachment(ctx, bID, x); err != nil {
 					return err
+				} else {
+					if err = db.PutN(
+						it.DBItem{bucketBA, string(x.ID), string(yID)},
+						it.DBItem{bucketAB, string(yID), string(x.ID)},
+					); err != nil {
+						return err
+					}
 				}
 			}
 		}
