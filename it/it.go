@@ -80,6 +80,7 @@ var ErrAlreadyRegistered = errors.New("already registered")
 // Issue holds the data of the issue.
 type Issue struct {
 	ID, SecondaryID IssueID
+	Summary         string
 	State           State
 }
 
@@ -107,9 +108,9 @@ type Author struct {
 
 // Attachment is an attachment (file).
 type Attachment struct {
-	ID        AttachmentID
-	Name      string
-	CreatedAt time.Time
+	ID             AttachmentID
+	Name, MIMEType string
+	CreatedAt      time.Time
 	// GetBody returns the data.
 	GetBody func() (io.ReadCloser, error)
 }

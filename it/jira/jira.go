@@ -7,6 +7,9 @@ package jira
 
 import (
 	"context"
+	"io"
+	"io/ioutil"
+	"strings"
 	"time"
 
 	"github.com/UNO-SOFT/mantisync/it"
@@ -35,19 +38,35 @@ func (c Client) ID() it.TrackerID {
 }
 
 // GetIssue returns the data for the issueID
-func (c Client) GetIssue(context.Context, it.IssueID) (it.Issue, error) {
-	return it.Issue{}, it.ErrNotImplemented
+func (c Client) GetIssue(ctx context.Context, ID it.IssueID) (it.Issue, error) {
+	ji, _, err := c.Client.Issue.Get(string(ID), nil)
+	return it.Issue{
+		ID: it.IssueID(ji.ID), Summary: ji.Fields.Summary,
+		State: it.State(ji.Fields.Status.Name),
+	}, err
 }
 
 // ListIssues lists all the issues created/changed since "since".
 func (c Client) ListIssues(ctx context.Context, since time.Time) ([]it.Issue, error) {
-	return nil, it.ErrNotImplemented
+	// https://developer.atlassian.com/server/jira/platform/jira-rest-api-examples/#searching-for-issues-examples
+	issues := make([]it.Issue, 0, 1024)
+	err := c.Client.Issue.SearchPages("",
+		&jira.SearchOptions{
+			StartAt: 0, MaxResults: 1000, Fields: []string{"id", "key"},
+		},
+		func(ji jira.Issue) error {
+			issues = append(issues, it.Issue{ID: it.IssueID(ji.ID)})
+			return nil
+		},
+	)
+	return issues, err
 }
 
 // CreateIssue creates the issue, returning the ID.
 // May return ErrNotImplemented.
 func (c Client) CreateIssue(context.Context, it.Issue) (it.IssueID, error) {
-	return it.IssueID(""), it.ErrNotImplemented
+	ji, _, err := c.Client.Issue.Create(&jira.Issue{})
+	return it.IssueID(ji.ID), err
 }
 
 // UpdateIssue updates the issue's state.
@@ -62,7 +81,9 @@ func (c Client) SetSecondaryID(ctx context.Context, primary, secondary it.IssueI
 
 // AddComment adds a comment to the issue.
 func (c Client) AddComment(ctx context.Context, ID it.IssueID, comment it.Comment) (it.CommentID, error) {
-	jc, _, err := c.Issue.AddComment(string(ID), &jira.Comment{Body: comment.Body, Created: comment.CreatedAt.Format(time.RFC3339)})
+	jc, _, err := c.Issue.AddComment(string(ID), &jira.Comment{
+		Body: comment.Body, Created: comment.CreatedAt.Format(time.RFC3339),
+	})
 	return it.CommentID(jc.ID), err
 }
 
@@ -72,11 +93,46 @@ func (c Client) ListComments(ctx context.Context, ID it.IssueID) ([]it.Comment, 
 }
 
 // AddAttachment adds the attachment to the issue.
-func (c Client) AddAttachment(context.Context, it.IssueID, it.Attachment) (it.AttachmentID, error) {
-	return it.AttachmentID(""), it.ErrNotImplemented
+func (c Client) AddAttachment(ctx context.Context, ID it.IssueID, a it.Attachment) (it.AttachmentID, error) {
+	r, err := a.GetBody()
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	as, _, err := c.Client.Issue.PostAttachment(string(ID), r, a.Name)
+	return it.AttachmentID((*as)[0].ID), err
 }
 
 // ListAttachments lists the attachments of the issue.
-func (c Client) ListAttachments(context.Context, it.IssueID) ([]it.Attachment, error) {
+func (c Client) ListAttachments(ctx context.Context, ID it.IssueID) ([]it.Attachment, error) {
+	jc, _, err := c.Client.Issue.Get(string(ID), &jira.GetQueryOptions{
+		Fields: "attachment",
+	})
+	if err != nil {
+		return nil, err
+	}
+	as := make([]it.Attachment, len(jc.Fields.Attachments))
+	for i, ja := range jc.Fields.Attachments {
+		as[i] = it.Attachment{
+			ID: it.AttachmentID(ja.ID), Name: ja.Filename, MIMEType: ja.MimeType, //CreatedAt:ja.Created,
+		}
+		if ja.Content != "" {
+			as[i].GetBody = func() (io.ReadCloser, error) {
+				return struct {
+					io.Reader
+					io.Closer
+				}{strings.NewReader(ja.Content), ioutil.NopCloser(nil)}, nil
+			}
+		} else {
+			aID := ja.ID
+			as[i].GetBody = func() (io.ReadCloser, error) {
+				resp, err := c.Client.Issue.DownloadAttachment(aID)
+				if err != nil {
+					return nil, err
+				}
+				return resp.Body, nil
+			}
+		}
+	}
 	return nil, it.ErrNotImplemented
 }
