@@ -57,7 +57,7 @@ func (c Client) GetIssue(ctx context.Context, ID it.IssueID) (it.Issue, error) {
 		return it.Issue{}, err
 	}
 	return it.Issue{
-		ID:        it.IssueID(strconv.Itoa(*mi.ID)),
+		ID:        it.IssueID(strconv.Itoa(int(*mi.ID))),
 		Summary:   *mi.Summary,
 		Author:    readMU(mi.Handler),
 		CreatedAt: time.Time(*mi.DateSubmitted),

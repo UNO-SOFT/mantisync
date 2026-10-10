@@ -54,8 +54,9 @@ var (
 func Register(name string, factory func(baseURL string) (Tracker, error)) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	_, ok := registry[name]
-	if ok {
+	if registry == nil {
+		registry = make(map[string]func(string) (Tracker, error))
+	} else if _, ok := registry[name]; ok {
 		panic(fmt.Errorf("%q: %w", name, ErrAlreadyRegistered))
 	}
 	registry[name] = factory
