@@ -19,7 +19,7 @@ import (
 	_ "github.com/UNO-SOFT/mantisync/it/jira"
 	_ "github.com/UNO-SOFT/mantisync/it/mantisbt"
 
-	"github.com/peterbourgon/ff/v3/ffcli"
+	"github.com/UNO-SOFT/cli"
 	"github.com/tgulacsi/go/globalctx"
 )
 
@@ -32,9 +32,10 @@ func main() {
 func Main() error {
 	fs := flag.NewFlagSet("mantisync", flag.ContinueOnError)
 	flagDB := fs.String("db", "sync.db.json", "DB to store sync info")
-	app := ffcli.Command{Name: "mantisync", FlagSet: fs,
-		ShortUsage: "jira:JIRABaseURL mantis:MantisURL",
-		Exec: func(ctx context.Context, args []string) error {
+	app := cli.Command{Name: "mantisync", Flags: fs,
+		Usage: "jira:JIRABaseURL mantis:MantisURL",
+		Exec: func(ctx context.Context, state *cli.State) error {
+			args := state.Args
 			if len(args) != 2 {
 				return flag.ErrHelp
 			}
@@ -58,7 +59,7 @@ func Main() error {
 	}
 	ctx, cancel := globalctx.Wrap(context.Background())
 	defer cancel()
-	return app.ParseAndRun(ctx, os.Args[1:])
+	return cli.ParseAndRun(ctx, &app, os.Args[1:], nil)
 }
 
 func Sync(ctx context.Context, db it.DB, primary, secondary it.Tracker) error {
